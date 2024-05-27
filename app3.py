@@ -9,33 +9,12 @@ import random
 from sklearn.preprocessing import LabelBinarizer 
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
-import re
-import joblib
-
 
 app = Flask(__name__)
 CORS(app)
 
+
 pickled_model = pickle.load(open('model.pkl', 'rb'))
-
-with open('./models/transform_predict.joblib', 'rb') as f:
-    model = joblib.load(f)
-
-@app.route('/getdyslexic', methods=['POST'])
-def create_book2():
-    try:
-        json_data = request.json
-        if json_data and 'data' in json_data:
-            data_list = json_data['data']
-        latest_data = np.array([float(data_list["language_vocab"]), float(data_list["visual_discrimination"]),
-                                float(data_list["memory"]), float(data_list["audio_Discrimination"]), float(np.random.uniform(0, 0.5)),0.2])
-        latest_data = latest_data.reshape(1, -1)
-
-        prediction = float(model.predict(latest_data)[0])
-        response_data = {'result': prediction}
-        return jsonify(response_data), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 with open('label_binarizer.pkl', 'rb') as f:
     LB = pickle.load(f)
@@ -84,21 +63,44 @@ def get_word(letter):
     word = "".join(letter)
     return word
 
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
 @app.route('/gettext', methods=['POST'])
 def create_book():
     try:
         print(request.files)
+
+        # Check if the POST request has the file part
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part in the request'}), 400
         
-        f = request.files['file']
-        f.save(secure_filename(f.filename))
-        print(f.filename)
-        letter, image = get_letters(f.filename)
-        word = get_word(letter)
-        pattern = r'\(([^)]+)\)'
-        letters_in_parentheses = re.findall(pattern, word)
-        response_data = {'word': letters_in_parentheses}
-        print(word)
-        return jsonify(response_data), 200
+        file = request.files['file']
+
+        # If the user does not select a file, the browser submits an empty file without a filename
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+
+        # Check if the file has an allowed extension
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file extension'}), 400
+
+        # Save the file to the uploads folder
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+
+            # Process the uploaded image
+            letter, image = get_letters(file_path)
+            word = get_word(letter)
+            response_data = {'word': word}
+            print(word)
+            return jsonify(response_data), 200
 
         print('hello2')
 
@@ -120,5 +122,7 @@ def create_book():
     # except Exception as e:
     #    return jsonify({'error': str(e)}), 500
 
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)
+
